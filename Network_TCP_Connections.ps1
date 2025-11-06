@@ -18,9 +18,11 @@ Invoke-Command -ComputerName $targets -Credential $creds -ScriptBlock {
 # modify these variables to filter out data
 $connection_type = @("Established","Listen")
 $port_cutoff = 65535
+$Domain = (Get-WmiObject Win32_ComputerSystem).Domain
+$HostName =(Get-CimInstance -ClassName Win32_ComputerSystem).Name 
 Get-NetTCPConnection | where {$_.state -in $connection_type -and ($_.RemotePort -lt $port_cutoff -or $_.LocalPort -lt $port_cutoff)} |
-        Select-Object -Property @{n="Domain";e={(Get-WmiObject Win32_ComputerSystem).Domain}},
-                                @{n="HostName";e={(Get-CimInstance -ClassName Win32_ComputerSystem).Name}},
+        Select-Object -Property @{n="Domain";e={$Domain}},
+                                @{n="HostName";e={$HostName}}, 
                                 LocalAddress,
                                 LocalPort,
                                 RemoteAddress,
