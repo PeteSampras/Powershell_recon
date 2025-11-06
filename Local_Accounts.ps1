@@ -16,7 +16,8 @@ $targets = Import-Csv $inputfile | select -ExpandProperty ip | Sort-Object -Uniq
 
 Invoke-Command -ComputerName $targets -Credential $creds -ScriptBlock {
 #enumerate local users to check if Admin
-
+$Domain = (Get-WmiObject Win32_ComputerSystem).Domain
+$HostName =(Get-CimInstance -ClassName Win32_ComputerSystem).Name 
 $localusers = Get-CimInstance -ClassName Win32_UserAccount
 foreach ($user in $localusers) {
     #Get-LocalGroupMember -Member $user.Name
@@ -26,8 +27,8 @@ foreach ($user in $localusers) {
         $privilege = "Admin"
     }
     [PSCustomObject]@{
-        Domain = (Get-WmiObject Win32_ComputerSystem).Domain
-        HostName = (Get-CimInstance -ClassName Win32_ComputerSystem).Name
+        Domain = $Domain
+        HostName = $HostName
         LocalUser = $user.Caption
         Privilege = $privilege
         Date = $Date
