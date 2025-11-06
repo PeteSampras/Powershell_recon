@@ -1,5 +1,4 @@
 # this script assumes you have a list of IPs with a column header of ip.
-# the purpose of this output is to provide additional information beyond an IP for your network so you can make more informed queries later
 
 #date and time stamps
 $Date = Get-Date -Format "yyyyMMdd"
