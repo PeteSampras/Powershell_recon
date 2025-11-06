@@ -16,10 +16,12 @@ $targets = Import-Csv $inputfile | select -ExpandProperty ip | Sort-Object -Uniq
 
 Invoke-Command -ComputerName $targets -Credential $creds -ScriptBlock {
 $processes = Get-CimInstance -ClassName win32_Process
+$Domain = (Get-WmiObject Win32_ComputerSystem).Domain
+$HostName =(Get-CimInstance -ClassName Win32_ComputerSystem).Name 
 foreach ($process in $processes) {
 $owner = $process | Invoke-CimMethod -methodname GetOwner | select User -ExpandProperty User
-$process | Select-Object -property @{n="Domain";e={(Get-WmiObject Win32_ComputerSystem).Domain}},
-                                @{n="HostName";e={(Get-CimInstance -ClassName Win32_ComputerSystem).Name}}, 
+$process | Select-Object -property @{n="Domain";e={$Domain}},
+                                @{n="HostName";e={$HostName}}, 
                                 ProcessName,
                                 ProcessID,
                                 Path,
