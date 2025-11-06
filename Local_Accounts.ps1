@@ -5,7 +5,7 @@ $Date = Get-Date -Format "yyyyMMdd"
 $Time = Get-Date -Format "hhMMss"
 
 #comment $creds out if you are using in multiple scripts or it will be super annoying
-$creds = Get-Credential
+#$creds = Get-Credential
 
 #change csv files to match what you need
 $inputfile = ".\AllHosts.csv"
@@ -13,7 +13,7 @@ $outputfile = ".\"+$Date+"_"+$Time+"_Local_Users.csv"
 
 $targets = Import-Csv $inputfile | select -ExpandProperty ip | Sort-Object -Unique
 
-#build out initial computer info
+
 Invoke-Command -ComputerName $targets -Credential $creds -ScriptBlock {
 #enumerate local users to check if Admin
 
