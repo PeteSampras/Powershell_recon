@@ -9,7 +9,7 @@ $Time = Get-Date -Format "hhMMss"
 
 #change csv files to match what you need
 $inputfile = ".\AllHosts.csv"
-$outputfile = ".\"+$Date+"_"+$Time+"_Services.csv"
+$outputfile = ".\"+$Date+"_"+$Time+"_AutoRuns.csv"
 
 $targets = Import-Csv $inputfile | select -ExpandProperty ip | Sort-Object -Unique
 
