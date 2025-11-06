@@ -15,10 +15,12 @@ $targets = Import-Csv $inputfile | select -ExpandProperty ip | Sort-Object -Uniq
 
 
 Invoke-Command -ComputerName $targets -Credential $creds -ScriptBlock {
+$Domain = (Get-WmiObject Win32_ComputerSystem).Domain
+$HostName =(Get-CimInstance -ClassName Win32_ComputerSystem).Name 
 schtasks /query /V /FO CSV | ConvertFrom-Csv |
     Where-Object {$_."Scheduled Task State" -eq "Enabled"} |
-        Select-Object -Property @{n="Domain";e={(Get-WmiObject Win32_ComputerSystem).Domain}},
-                                @{n="HostName";e={(Get-CimInstance -ClassName Win32_ComputerSystem).Name}},
+        Select-Object -Property @{n="Domain";e={$Domain}},
+                                @{n="HostName";e={$HostName}}, 
                                 TaskName,
                                 Status,
                                 "Run As User",
