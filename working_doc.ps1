@@ -3,13 +3,36 @@ Get-ScheduledTask | Where-Object TaskPath -NotLike "\Microsoft\*" | Select-Objec
 $winversion=(Get-CimInstance Win32_OperatingSystem).Version
 $computername=(Get-CimInstance -ClassName Win32_ComputerSystem).Name
 $ipAddress = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq "Ethernet" -and $_.AddressState -eq "Preferred" }).IPAddress
+$domain=(Get-WmiObject Win32_ComputerSystem).Domain
+
 #local data for saving to outfile
 $Date = Get-Date -Format "yyyyMMdd"
 $PathString = "C:\users\"+[string]$Env:USERNAME + "\Desktop\" + "$Date" + "_Tasks.csv"
 
-$localadmins = Get-LocalGroupMember -Group 'Administrators' | select name
+$productType = (Get-CimInstance -ClassName Win32_OperatingSystem).ProductType
+
+if ($productType -eq 2) {
+    Write-Host "This computer is a Domain Controller."
+} elseif ($productType -eq 3) {
+    Write-Host "This computer is a Member Server."
+} else {
+    Write-Host "This computer is neither a Domain Controller nor a Member Server (e.g., Workstation)."
+}
+
+#SMB shares
+Get-SmbShare | Where-Object { $_.Name -match "\$" }
+
+#network connections
+Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object Name, Status, MacAddress, LinkSpeed
+
+#check AV
+$avProcesses = @("MsMpEng", "avp", "McShield", "savservice", "egui")
+Get-Process | Where-Object { $avProcesses -contains $_.Name } | Select-Object Name, Id, StartTime
+
+#enumerate local users to check if Admin
 $localusers = Get-CimInstance -ClassName Win32_UserAccount
 foreach ($user in $localusers) {
+    Get-LocalGroupMember -Member $user.Name
     $isadmin = Get-LocalGroupMember -Group 'Administrators' | where {$_.Name -eq $user.Caption}
     if ($isadmin.Length -eq 1) {
         [PSCustomObject]@{
@@ -17,23 +40,13 @@ foreach ($user in $localusers) {
                 Privilege = "Admin"
             }
         }
-    if ($isadmin.Length -eq 0) {
+    if ($isadmin.Length -ne 1) {
         [PSCustomObject]@{
-                User = $user.Caption
+                LocalUser = $user.Caption
                 Privilege = "User"
             }
         }
     }
-$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$currentUser = [System.Security.Principal.WindowsIdentity]::Impersonate("Administrator")
-$isAdmin = (New-Object System.Security.Principal.WindowsPrincipal $currentUser).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
-
-if ($isAdmin) {
-    "The current user $($currentUser.Name) has administrative rights."
-} else {
-    "The current user $($currentUser.Name) does NOT have administrative rights."
-}
-[System.Security.Principal.WindowsIdentity]::Equals("administrator")
 
 
 Get-ScheduledTask | ForEach-Object {
@@ -54,7 +67,7 @@ Get-ScheduledTask | ForEach-Object {
         }
     }
 
-
+#get sched tasks and hash
 Get-ScheduledTask | ForEach-Object { 
     if ($_.TaskPath -notlike '*\Microsoft\*') {
         [PSCustomObject]@{
@@ -68,7 +81,7 @@ Get-ScheduledTask | ForEach-Object {
 }  | fl *
 
 
-
+#get processes and hashes, if no owner or Path it was launched at boot
 $processes = Get-CimInstance -ClassName win32_Process
 foreach ($process in $processes) {
 $owner = $process | Invoke-CimMethod -methodname GetOwner | select User -ExpandProperty User
@@ -83,17 +96,7 @@ $process | Select-Object -property ProcessName,
                                 @{n="ParentProcessPath";e={(Get-Process -ErrorAction Ignore -Id $_.ParentProcessID).path}}
 }
 
-Get-CimInstance -ClassName win32_Process | #Invoke-CimMethod -methodname GetOwner | select User
-        Select-Object -Property ProcessName,
-                                ProcessID,
-                                Path,
-                                CommandLine,
-                                @{n="Owner";e={Get-CimInstance -ClassName win32_Process -Filter "ID = '$_.ProcessID'" | Invoke-CimMethod -methodname GetOwner | select User},
-                                #@{n="Owner";e={Get-Process -IncludeUserName | where {$_.Id -eq $_.ProcessID} | select UserName -ExpandProperty UserName},
-                                @{n="Hash";e={(Get-FileHash -Path $_.Path).hash}},
-                                @{n="ParentProcessName";e={(Get-Process -ErrorAction Ignore -Id $_.ParentProcessID).name}}
 
-                                }
 
 $Date = Get-Date -Format "yyyyMMdd"
 $PathString = "C:\users\"+[string]$Env:USERNAME + "\Desktop\" + "$Date" + "_Tasks.csv"
@@ -194,8 +197,8 @@ Get-WinEvent -LogName system -ErrorAction SilentlyContinue | Where-Object -Prope
         New-Object -TypeName psobject -Property $data
 
     }
-
-    Get-CimInstance -ClassName Win32_Service |
+# get services
+Get-CimInstance -ClassName Win32_Service |
         Select-Object -Property @{n="ServiceName";e={$_.name}},
                                 @{n="Status";e={$_.state}},
                                 @{n="StartType";e={$_.startmode}},
@@ -204,6 +207,8 @@ Get-WinEvent -LogName system -ErrorAction SilentlyContinue | Where-Object -Prope
                                 PathName,
                                 ProcessId
 
+
+#Get scheduled tasks
 schtasks /query /V /FO CSV | ConvertFrom-Csv |
     Where-Object {$_."Scheduled Task State" -eq "Enabled"} |
         Select-Object -Property TaskName,
@@ -218,11 +223,55 @@ schtasks /query /V /FO CSV | ConvertFrom-Csv |
                                 "Task to Run",
                                 @{n="Hash";e={(Get-FileHash -Path (($_."Task to Run") -replace "\.exe.*",".exe" -replace '"', '') -ErrorAction SilentlyContinue).hash}}
 
-    Get-CimInstance -ClassName Win32_Service |
-        Select-Object -Property @{n="ServiceName";e={$_.name}},
-                                @{n="Status";e={$_.state}},
-                                @{n="StartType";e={$_.startmode}},
-                                @{n="Hash";e={(Get-FileHash -Path ($_.PathName -replace "\.exe.*",".exe" -replace '"', '')).hash}},
-                                @{n="ProcessName";e={(Get-Process -Id $_.ProcessID).ProcessName}},
-                                PathName,
-                                ProcessId
+#get tcp connections
+Get-NetTCPConnection | where {$_.state -eq "Established" -and $_.RemotePort -lt 49000 -or $_.LocalPort -lt 49000} |
+        Select-Object -Property LocalAddress,
+                                LocalPort,
+                                RemoteAddress,
+                                RemotePort,
+                                State,
+                                @{n="ProcessID";e={$_.OwningProcess}},
+                                @{n="ProcessName";e={(Get-Process -Id $_.OwningProcess).ProcessName}} | ft *
+
+#autoreg finder. must have autorunkeys.txt
+param ([string[]]$AutoRunKeys)
+
+ForEach ($Key in Get-Item -Path $AutoRunKeys -ErrorAction SilentlyContinue){
+    $Key.GetValueNames() |
+        Select-Object -Property @{n="Key_Location";e={$Key}},
+                                @{n="Key_ValueName";e={$_}},
+                                @{n="Key_Value";e={$Key.GetValue($_)}}
+}
+
+#autorun keys.txt
+<#
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnce
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnceEx
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServicesOnce
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunServicesOnce
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunServices
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunServices
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run
+HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Window
+HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Userinit
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Shell
+HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Notify
+#>        
+
+# get stored wifi creds
+(netsh wlan show profiles) | Select-String ":(.+)$" | ForEach-Object {
+    $profile = $_.Matches.Groups[1].Value.Trim()
+    netsh wlan show profile name="$profile" key=clear | Select-String "Key Content" 
+}       
+
+# get installed programs
+Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select DisplayName, PSChildName, DisplayVersion, Publisher | Format-Table -AutoSize   
