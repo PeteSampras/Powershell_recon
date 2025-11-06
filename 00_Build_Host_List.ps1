@@ -3,7 +3,7 @@
 
 #date and time stamps
 $Date = Get-Date -Format "yyyyMMdd"
-$Time = Get-Date -Format "hhMMss.sss"
+$Time = Get-Date -Format "hhMMss"
 
 #comment $creds out if you are using in multiple scripts or it will be super annoying
 $creds = Get-Credential
