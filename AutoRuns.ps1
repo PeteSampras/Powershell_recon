@@ -15,6 +15,8 @@ $targets = Import-Csv $inputfile | select -ExpandProperty ip | Sort-Object -Uniq
 
 #invoke command
 Invoke-Command -ComputerName $targets -Credential $creds -ScriptBlock {
+$Domain = (Get-WmiObject Win32_ComputerSystem).Domain
+$HostName =(Get-CimInstance -ClassName Win32_ComputerSystem).Name 
 #modify autoruns variable paths as needed
 $autoruns = @'
 HKLM:\Software\Microsoft\Windows\CurrentVersion\Run
@@ -40,8 +42,8 @@ HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Notify
 '@ -split "`r`n"
 ForEach ($Key in Get-Item -Path $autoruns -ErrorAction SilentlyContinue) {
     $Key.GetValueNames() | where {$Key.GetValue($_) -like '*.*'} |
-        Select-Object -Property @{n="Domain";e={(Get-WmiObject Win32_ComputerSystem).Domain}},
-                                @{n="HostName";e={(Get-CimInstance -ClassName Win32_ComputerSystem).Name}},
+        Select-Object -Property @{n="Domain";e={$Domain}},
+                                @{n="HostName";e={$HostName}}, 
                                 @{n="Key_Location";e={$Key}},
                                 @{n="Key_ValueName";e={$_}},
                                 @{n="Key_Value";e={$Key.GetValue($_)}},
